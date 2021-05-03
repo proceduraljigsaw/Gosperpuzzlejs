@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+   <!-- HTML and several functions based or copied from https://github.com/Draradech/jigsaw -->
+   <meta charset="UTF-8">
+   <title>Fractal jigsaw puzzle generator</title>
+   <script type="text/javascript">
+
+      var seed = 1;
+      var corder, psize, rad, stepsize, framecorner, minp, maxp;
+      var jig;
+      function random() { var x = Math.sin(seed) * 10000; seed += 1; return x - Math.floor(x); }
+      function uniform(min, max) { var r = random(); return min + r * (max - min); }
+      function rbool() { return random() > 0.5; }
+
+      function $(id) { return document.getElementById(id); }
+
+      function updateseed() { $("_seed").value = $("seed").value; update(); }
+      function updatecurveorder() { $("_corder").value = $("corder").value; update(); }
+      function updatepsize() { $("_psize").value = $("psize").value; update(); }
+      function update_seed() { var val = parseInt($("_seed").value); if (!isNaN(val)) { $("seed").value = val; } updateseed(); }
+      function update_corder() { var val = parseInt($("_corder").value); if (!isNaN(val)) { $("corder").value = val; } updatecurveorder(); }
+      function update_size() { var val = parseInt($("_psize").value); if (!isNaN(val)) { $("psize").value = val; } updatepsize(); }
+
+      class Point {
+         constructor(x, y) {
+            this._x = x;
+            this._y = y;
+            this.break = false;
+         }
+         get x() {
+            return this._x;
+         }
+         get y() {
+            return this._y;
+         }
+         eq(p) {
+            return (this.x == p.x && this.y == p.y);
+         }
+      }
+
+
+      class Gosper {
+         constructor(order, size) {
+            this.order = order;
+            this.size = size;
+            this.points = [new Point(0, 0)];
+            this.lp = this.points[0];
+            this.dir = 0;
+            this.sizes = size * 0.86602540378443864676372317075294;
+            this.sizeh = size / 2;
+            this.incs = [[0, this.size], [this.sizes, this.sizeh], [this.sizes, -this.sizeh], [0, -this.size], [-this.sizes, -this.sizeh], [-this.sizes, this.sizeh]]
+            this.pieces = [];
+            this.cutlines = [];
+            const xpts_ord = [1, 3, 9, 25, 63, 173, 471];
+            const ypts_ord = [3, 8, 16, 41, 115, 303, 775];
+            this.xpts = xpts_ord[this.order];
+            this.ypts = ypts_ord[this.order];
+            this.occupancy = new Array(this.xpts * this.ypts).fill(-1);
+
+         }
+         left() {
+            this.dir = this.dir - 1;
+            if (this.dir < 0) {
+               this.dir = 5;
+            }
+         }
+         right() {
+            this.dir = this.dir + 1;
+            this.dir %= 6;
+         }
+
+         move() {
+            this.lp = new Point(this.lp.x + this.incs[this.dir][0], this.lp.y + this.incs[this.dir][1]);
+            this.points.push(this.lp);
+         }
+         gosper_step(order, is_A) {
+            if (order == 0) {
+               this.move();
+               return;
+            }
+            if (is_A) {
+               var seq = [0, 3, 1, 3, 3, 1, 2, 0, 2, 2, 0, 0, 2, 1, 3];
+            } else {
+               var seq = [2, 0, 3, 1, 1, 3, 3, 1, 3, 0, 2, 2, 0, 2, 1];
+            }
+            seq.forEach((c) => {
+               switch (c) {
+                  case 0:
+                     this.gosper_step(order - 1, true);
+                     break;
+                  case 1:
+                     this.gosper_step(order - 1, false);
+                     break;
+                  case 2:
+                     this.left();
+                     break;
+                  case 3:
+                     this.right();
+                     break;
+               }
+            });
+
+         }
+         generate() {
+            this.gosper_step(this.order, true);
+         }
+         extents() {
+            var minx = Math.min(...this.points.map((p) => p.x));
+            var maxx = Math.max(...this.points.map((p) => p.x));
+            var miny = Math.min(...this.points.map((p) => p.y));
+            var maxy = Math.max(...this.points.map((p) => p.y));
+            return [minx, maxx, miny, maxy]
+         }
+         normalize() {
+            var extents = this.extents();
+            var newpoints = []
+            this.points.forEach((p) => {
+               newpoints.push(new Point(p.x - extents[0], p.y - extents[2]));
+            });
+            this.points = newpoints;
+         }
+         width() {
+            return this.extents()[1] - this.extents()[0];
+         }
+         height() {
+            return this.extents()[3] - this.extents()[2];
+         }
+         svgpoints() {
+            var data = "";
+            this.points.forEach((p) => {
+               data += p.x + "," + p.y + " ";
+            });
+            data = data.slice(0, -1);
+            return data;
+         }
+
+         gen_occupancy(self) {
+            var maxx = 0;
+            var maxy = 0;
+            for (var i = 0; i < this.points.length; i++) {
+               var p = this.points[i];
+               var x = Math.round(p.x / this.sizes);
+               var y = Math.round(p.y / this.sizeh);
+               if (x > maxx) {
+                  maxx = x;
+               }
+               if (y > maxy) {
+                  maxy = y;
+               }
+               this.occupancy[x * this.ypts + y] = i;
+            }
+            console.log(maxx, maxy);
+         }
+
+         makepieces() {
+            var piece = [];
+            var start = Math.floor(uniform(0, this.points.length))
+            var i = 0;
+            var k = 0;
+            while (k < this.points.length) {
+               i = (k + start) % this.points.length;
+               var p = this.points[i]
+               piece = []
+               if (true) {
+                  var x = Math.round(p.x / this.sizes);
+                  var y = Math.round(p.y / this.sizeh);
+                  var neighbors = [[x + 1, y + 1], [x + 1, y - 1], [x - 1, y + 1], [x - 1, y - 1]];
+                  var validneighbors = [];
+                  neighbors.forEach((n) => {
+                     var index = n[0] * this.ypts + n[1];
+                     if (index < this.occupancy.length) {
+                        var noccu = this.occupancy[index];
+                        if (noccu > i + 2) {
+                           validneighbors.push(noccu);
+                        }
+                     }
+                  });
+                  if (validneighbors.length) {
+                     piece.push(p);
+                     var cn = validneighbors[Math.floor(uniform(0, validneighbors.length))];
+                     var btindex = cn;
+                     while (btindex > i) {
+                        piece.push(this.points[btindex]);
+                        btindex--;
+                     }
+                     if (piece.length > psize) {
+                        var data = "";
+                        piece.forEach((p) => {
+                           data += p.x + "," + p.y + " ";
+                        });
+                        data = data.slice(0, -1);
+                        var newpath = document.createElementNS($("puzzlecontainer").namespaceURI, "polyline")
+                        newpath.setAttribute("points", data);
+                        newpath.setAttribute("stroke", "black");
+                        newpath.setAttribute("stroke-width", 1);
+                        newpath.setAttribute("fill", "#" + Math.floor(uniform(0, 16777216)).toString(16));
+                        $("puzzlecontainer").appendChild(newpath);
+                        this.cutlines.push([piece[0], piece[1]]);
+                     }
+                  }
+               }
+               k = k + Math.min(10, piece.length + 1);
+            }
+
+         }
+
+         exportsvg() {
+            var width = this.width();
+            var height = this.height();
+
+            var data = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><svg baseProfile=\"full\" height=\"" + height + "mm\" version=\"1.1\" viewBox=\"0 0 " + width + " " + height + "\" width=\"" + width + "mm\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:ev=\"http://www.w3.org/2001/xml-events\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><defs />"
+
+
+            data += "<polyline points=\"" + this.svgpoints() + "\" style=\"fill:none;stroke:black;stroke-width:1\" />"
+            this.cutlines.forEach((c) => {
+               data += "<line x1=\"" + c[0].x + "\" y1=\"" + c[0].y + "\" x2=\"" + c[1].x + "\" y2=\"" + c[1].y + "\" style=\"stroke:rgb(255,0,0);stroke-width:1\" />";
+            });
+            //data += "<path fill=\"none\" stroke=\"black\" stroke-width=\"0.1\" d=\"" + createframe() + "\"></path>";
+            data += "</svg>";
+            return data;
+         }
+      }
+
+
+
+      // save function pieced together from here: https://stackoverflow.com/questions/19327749/javascript-blob-filename-without-link
+      function save(filename, data) {
+         var blob = new Blob([data], { type: "text/csv" });
+         if (window.navigator.msSaveOrOpenBlob) {
+            window.navigator.msSaveBlob(blob, filename);
+         }
+         else {
+            var elem = window.document.createElement('a');
+            elem.href = window.URL.createObjectURL(blob);
+            elem.download = filename;
+            document.body.appendChild(elem);
+            elem.click();
+            document.body.removeChild(elem);
+         }
+      }
+
+
+      function parse_input() {
+         seed = parseInt($("seed").value);
+         corder = parseInt($("corder").value);
+         psize = parseInt($("psize").value);
+         stepsize = parseFloat($("stepsize").value);
+      }
+
+
+      function update() {
+         parse_input();
+
+      }
+
+      function savesvg(mode) {
+         save("jigsaw.svg", jig.exportsvg());
+      }
+
+
+      function generate() {
+         parse_input();
+         jig = new Gosper(corder, stepsize);
+
+         jig.generate();
+         jig.normalize();
+         jig.gen_occupancy();
+
+         $("puzzlecontainer").setAttribute("width", jig.width());
+         $("puzzlecontainer").setAttribute("height", jig.height());
+
+         while ($("puzzlecontainer").firstChild) {
+            $("puzzlecontainer").removeChild($("puzzlecontainer").firstChild);
+         }
+         var newpath = document.createElementNS($("puzzlecontainer").namespaceURI, "polyline")
+         newpath.setAttribute("points", jig.svgpoints());
+         newpath.setAttribute("stroke", "black");
+         newpath.setAttribute("stroke-width", 1);
+         newpath.setAttribute("fill", "none");
+         $("puzzlecontainer").appendChild(newpath);
+         jig.makepieces();
+         $("width").innerHTML = jig.width();
+         $("height").innerHTML = jig.height();
+
+      }
+   </script>
+</head>
+
+
+<body onload="$('seed').value = Math.random() * 10000; updateseed();">
+   <table>
+      <tr>
+         <td>Seed:</td>
+         <td><input id="_seed" type="text" value="0" onchange="update_seed()" /></td>
+         <td><input id="seed" type="range" value="0" min="0" max="9999" step="1" onchange="updateseed()" /></td>
+      </tr>
+      <tr>
+         <td>Curve Order:</td>
+         <td><input id="_corder" type="text" value="4" onchange="update_corder()" /></td>
+         <td><input id="corder" type="range" value="4" min="2" max="6" step="1" onchange="updatecurveorder()" /></td>
+      </tr>
+      <tr>
+         <td>Value vaguely related to how large the pieces will get:</td>
+         <td><input id="_psize" type="text" value="100" onchange="update_size()" /></td>
+         <td><input id="psize" type="range" value="100" min="20" max="250" step="1" onchange="updatepsize()" /></td>
+      </tr>
+      <tr>
+         <td>Piece segment length:</td>
+         <td><input id="stepsize" type="text" value="6.0" size="4" onchange="update()" /> mm</td>
+         <td></td>
+      </tr>
+      <tr>
+         <td>Jigsaw size: <label id="width">w</label> x <label id="height">h</label> mm</td>
+      </tr>
+      <tr>
+         <td><button onclick="generate()">Generate Jigsaw</button></td>
+         <td><button onclick="savesvg()">Download SVG</button></td>
+      </tr>
+   </table>
+   <svg id="puzzlecontainer">
+      <!-- <path id="puzzlepath" fill="none" stroke="Black"></path> -->
+   </svg>
+
+</body>
+
+</html>
