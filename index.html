@@ -10,12 +10,18 @@
       var seed = 1;
       var corder, psize, rad, stepsize, framecorner, minp, maxp;
       var jig;
-      function random() { var x = Math.sin(seed) * 10000; seed += 1; return x - Math.floor(x); }
-      function uniform(min, max) { var r = random(); return min + r * (max - min); }
-      function rbool() { return random() > 0.5; }
+
 
       function $(id) { return document.getElementById(id); }
-
+      function random() { 
+         if($("ndr").checked){
+            return Math.random();
+         }else{
+            var x = Math.sin(seed) * 10000; seed += 1; return x - Math.floor(x); 
+         }
+      }
+      function uniform(min, max) { var r = random(); return min + r * (max - min); }
+      function rbool() { return random() > 0.5; }
       function updateseed() { $("_seed").value = $("seed").value; update(); }
       function updatecurveorder() { $("_corder").value = $("corder").value; update(); }
       function updatepsize() { $("_psize").value = $("psize").value; update(); }
@@ -137,21 +143,12 @@
          }
 
          gen_occupancy(self) {
-            var maxx = 0;
-            var maxy = 0;
             for (var i = 0; i < this.points.length; i++) {
                var p = this.points[i];
                var x = Math.round(p.x / this.sizes);
                var y = Math.round(p.y / this.sizeh);
-               if (x > maxx) {
-                  maxx = x;
-               }
-               if (y > maxy) {
-                  maxy = y;
-               }
                this.occupancy[x * this.ypts + y] = i;
             }
-            console.log(maxx, maxy);
          }
 
          makepieces() {
@@ -166,7 +163,7 @@
                if (true) {
                   var x = Math.round(p.x / this.sizes);
                   var y = Math.round(p.y / this.sizeh);
-                  var neighbors = [[x + 1, y + 1], [x + 1, y - 1], [x - 1, y + 1], [x - 1, y - 1]];
+                  var neighbors = [[x + 1, y + 1], [x + 1, y - 1], [x - 1, y + 1], [x - 1, y - 1],[x , y - 2],[x, y +2]];
                   var validneighbors = [];
                   neighbors.forEach((n) => {
                      var index = n[0] * this.ypts + n[1];
@@ -198,11 +195,22 @@
                         newpath.setAttribute("fill", "#" + Math.floor(uniform(0, 16777216)).toString(16));
                         $("puzzlecontainer").appendChild(newpath);
                         this.cutlines.push([piece[0], piece[1]]);
+                        this.pieces.push(piece);
                      }
                   }
                }
                k = k + Math.min(10, piece.length + 1);
             }
+            this.cutlines.forEach((c) => {
+               var newpath = document.createElementNS($("puzzlecontainer").namespaceURI, "line")
+               newpath.setAttribute("x1", c[0].x);
+               newpath.setAttribute("y1", c[0].y);
+               newpath.setAttribute("x2", c[1].x);
+               newpath.setAttribute("y2", c[1].y);
+               newpath.setAttribute("stroke", "red");
+               newpath.setAttribute("stroke-width", 2);
+               $("puzzlecontainer").appendChild(newpath);
+            });
 
          }
 
@@ -212,6 +220,34 @@
 
             var data = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><svg baseProfile=\"full\" height=\"" + height + "mm\" version=\"1.1\" viewBox=\"0 0 " + width + " " + height + "\" width=\"" + width + "mm\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:ev=\"http://www.w3.org/2001/xml-events\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><defs />"
 
+
+            data += "<polyline points=\"" + this.svgpoints() + "\" style=\"fill:none;stroke:black;stroke-width:1\" />"
+            this.cutlines.forEach((c) => {
+               data += "<line x1=\"" + c[0].x + "\" y1=\"" + c[0].y + "\" x2=\"" + c[1].x + "\" y2=\"" + c[1].y + "\" style=\"stroke:rgb(255,0,0);stroke-width:1\" />";
+            });
+            //data += "<path fill=\"none\" stroke=\"black\" stroke-width=\"0.1\" d=\"" + createframe() + "\"></path>";
+            data += "</svg>";
+            return data;
+         }
+
+
+         exportsvg_colored() {
+            var width = this.width();
+            var height = this.height();
+
+            var data = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><svg baseProfile=\"full\" height=\"" + height + "mm\" version=\"1.1\" viewBox=\"0 0 " + width + " " + height + "\" width=\"" + width + "mm\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:ev=\"http://www.w3.org/2001/xml-events\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><defs />"
+            this.pieces.forEach((pc) => {
+
+
+               data += "<polyline points=\"";
+
+               pc.forEach((p) => {
+                  data += p.x + "," + p.y + " ";
+               });
+
+
+               data += "Z\" style=\"fill:#" + Math.floor(uniform(0, 16777216)).toString(16) + ";stroke:black;stroke-width:1\" />"
+            });
 
             data += "<polyline points=\"" + this.svgpoints() + "\" style=\"fill:none;stroke:black;stroke-width:1\" />"
             this.cutlines.forEach((c) => {
@@ -256,7 +292,11 @@
       }
 
       function savesvg(mode) {
-         save("jigsaw.svg", jig.exportsvg());
+         if (mode) {
+            save("jigsaw_color.svg", jig.exportsvg_colored());
+         } else {
+            save("jigsaw.svg", jig.exportsvg());
+         }
       }
 
 
@@ -295,6 +335,8 @@
          <td>Seed:</td>
          <td><input id="_seed" type="text" value="0" onchange="update_seed()" /></td>
          <td><input id="seed" type="range" value="0" min="0" max="9999" step="1" onchange="updateseed()" /></td>
+         <td>Use non-deterministic randomness:</td>
+         <td><input id="ndr" type="checkbox"/></td>
       </tr>
       <tr>
          <td>Curve Order:</td>
@@ -302,7 +344,7 @@
          <td><input id="corder" type="range" value="4" min="2" max="6" step="1" onchange="updatecurveorder()" /></td>
       </tr>
       <tr>
-         <td>Value vaguely related to how large the pieces will get:</td>
+         <td>Value related to piece "size":</td>
          <td><input id="_psize" type="text" value="100" onchange="update_size()" /></td>
          <td><input id="psize" type="range" value="100" min="20" max="250" step="1" onchange="updatepsize()" /></td>
       </tr>
@@ -316,7 +358,8 @@
       </tr>
       <tr>
          <td><button onclick="generate()">Generate Jigsaw</button></td>
-         <td><button onclick="savesvg()">Download SVG</button></td>
+         <td><button onclick="savesvg(0)">Download SVG</button></td>
+         <td><button onclick="savesvg(1)">Download SVG colored (VERY BROKEN)</button></td>
       </tr>
    </table>
    <svg id="puzzlecontainer">
